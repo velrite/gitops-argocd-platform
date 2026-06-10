@@ -1,0 +1,50 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: platform-apps
+  namespace: argocd
+spec:
+  generators:
+    - matrix:
+        generators:
+          - list:
+              elements:
+                - environment: staging
+                  namespace: staging
+                  repoPath: apps/staging
+                  syncPolicy: automated
+                - environment: production
+                  namespace: production
+                  repoPath: apps/production
+                  syncPolicy: automated
+          - list:
+              elements:
+                - app: api-service
+  template:
+    metadata:
+      name: "{{environment}}-{{app}}"
+      labels:
+        environment: "{{environment}}"
+        app: "{{app}}"
+    spec:
+      project: platform
+      source:
+        repoURL: https://github.com/velrite/gitops-argocd-platform
+        targetRevision: HEAD
+        path: "{{repoPath}}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{namespace}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - PrunePropagationPolicy=foreground
+        retry:
+          limit: 5
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
