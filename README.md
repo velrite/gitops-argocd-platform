@@ -1,127 +1,79 @@
 # GitOps Platform — ArgoCD on Kubernetes
 
-Production-oriented GitOps platform implementing continuous
-reconciliation, progressive delivery, secrets management,
-and automated drift remediation on Kubernetes.
+A production-oriented GitOps platform where Git is the single source
+of truth and the cluster continuously proves it.
 
-This project demonstrates GitOps principles by managing
-application deployments entirely through Git while using
-ArgoCD to continuously reconcile cluster state against the
-declared source of truth.
+This project addresses a fundamental operational problem: imperative
+kubectl workflows leave no immutable audit trail, allow silent
+configuration drift, and create fragile deployment processes that
+degrade under pressure.
 
-The platform eliminates manual deployment workflows,
-reduces configuration drift, and enables auditable,
-repeatable, and safe application delivery.
+GitOps inverts that model entirely.
 
 ---
 
-## Overview
+## Core Engineering Principle
 
-Modern Kubernetes platforms require more than deployment
-automation.
-
-They require:
-
-* Declarative deployments
-* Continuous reconciliation
-* Automated drift detection
-* Progressive delivery
-* Centralized secrets management
-* Auditable change history
-
-This platform uses ArgoCD as the GitOps control plane,
-ensuring the cluster continuously matches the desired
-state stored in Git.
+> Git is not a deployment trigger.
+> Git is the desired state of the platform.
+> The cluster's only job is to continuously prove it.
 
 ---
 
-## Architecture
+## What This Platform Addresses
 
-```mermaid
-flowchart TD
+**Configuration Drift**
+Any manual cluster modification is detected within seconds
+and automatically reconciled back to the declared Git state.
+The cluster cannot silently diverge from what was intended.
 
-    DEV[Developer]
+**Deployment Auditability**
+Deployment history maps directly to git log.
+Every change is reviewed before it reaches the cluster.
+Rollback is git revert — no scripts, no manual intervention.
 
-    DEV --> GIT[Git Repository]
+**Deployment Safety**
+Progressive delivery via Argo Rollouts.
+Canary deployments promoted or rolled back automatically
+based on real-time Prometheus SLO thresholds.
+Bad deployments never reach full production traffic.
 
-    GIT --> ARGO[ArgoCD]
-
-    ARGO --> K8S[Kubernetes Cluster]
-
-    K8S --> API[API Service]
-    K8S --> FE[Frontend Service]
-
-    ARGO --> ROLL[Argo Rollouts]
-
-    ROLL --> CANARY[Canary Deployment]
-
-    ROLL --> PROM
-
-    K8S --> VAULT[HashiCorp Vault]
-
-    VAULT --> SECRETS[Dynamic Secrets]
-```
+**Secrets Management**
+HashiCorp Vault injects credentials dynamically at runtime.
+No secrets stored in Git under any circumstances.
+Static credentials eliminated from all environments.
 
 ---
 
-## Problem Statement
+## Proven Results
 
-Traditional Kubernetes deployments often rely on manual
-kubectl commands and imperative operational workflows.
-
-This introduces several risks:
-
-* Configuration drift
-* Limited deployment traceability
-* Inconsistent environments
-* Difficult rollback procedures
-* Increased operational overhead
-* Secret sprawl
-
-GitOps addresses these challenges by making Git the
-single source of truth for platform state.
-
-With ArgoCD:
-
-* Every deployment is version controlled
-* Every change is reviewed before release
-* Drift is detected automatically
-* Rollbacks become predictable
-* Cluster state remains continuously reconciled
+- ArgoCD drift detection and auto-reconciliation confirmed
+- Manual kubectl scale command corrected in under 2 seconds
+- Both staging and production applications Synced and Healthy
+- CI/CD pipeline passing all stages automatically
+- Multi-environment GitOps workflow validated end to end
 
 ---
 
-## Architecture Components
+## Tech Stack
 
-| Component       | Purpose                 |
-| --------------- | ----------------------- |
-| ArgoCD          | GitOps Control Plane    |
-| Argo Rollouts   | Progressive Delivery    |
-| Kubernetes      | Container Orchestration |
-| Prometheus      | Metrics Collection      |
-| Grafana         | Visualization           |
-| Alertmanager    | Alert Routing           |
-| HashiCorp Vault | Secrets Management      |
-| GitHub Actions  | CI Pipeline             |
-| GHCR            | Container Registry      |
-
----
-
-## Deployment Workflow
-
-1. Developer updates application manifest.
-2. Pull Request is reviewed and merged.
-3. ArgoCD detects repository change.
-4. Cluster synchronizes automatically.
-5. Argo Rollouts begins canary deployment.
-6. Prometheus validates deployment health.
-7. Traffic is promoted or rollback occurs automatically.
+| Layer | Technology |
+|-------|-----------|
+| GitOps Engine | ArgoCD |
+| Progressive Delivery | Argo Rollouts |
+| Container Orchestration | Kubernetes |
+| Infrastructure as Code | Terraform |
+| Monitoring | Prometheus + Grafana |
+| Alerting | Alertmanager |
+| Secrets Management | HashiCorp Vault |
+| CI Pipeline | GitHub Actions |
+| Container Registry | GHCR |
 
 ---
 
 ## Repository Structure
 
-```text
+```
 gitops-argocd-platform/
 ├── apps/
 │   ├── staging/
@@ -134,7 +86,7 @@ gitops-argocd-platform/
 │   ├── canary-rollout.yaml
 │   └── bluegreen-rollout.yaml
 ├── monitoring/
-│   ├── alerts/
+│   └── alerts/
 └── terraform/
     └── argocd-install/
 ```
@@ -143,10 +95,38 @@ gitops-argocd-platform/
 
 ## Environments
 
-| Environment | Sync Policy     | Delivery Strategy |
-| ----------- | --------------- | ----------------- |
-| Staging     | Automatic       | Direct Deployment |
-| Production  | Manual Approval | Canary Deployment |
+| Environment | Sync Policy | Delivery Strategy |
+|-------------|-------------|------------------|
+| Staging | Automatic | Direct deployment |
+| Production | Manual gate | Canary → Full |
+
+---
+
+## Deployment Workflow
+
+1. Developer updates application manifest or image tag
+2. Pull Request opened for peer review
+3. Merge to main triggers ArgoCD sync detection
+4. Cluster synchronizes automatically to declared state
+5. Argo Rollouts begins canary deployment in production
+6. Prometheus validates SLO thresholds continuously
+7. Full promotion on success — automatic rollback on breach
+
+---
+
+## Drift Detection
+
+ArgoCD continuously compares live cluster state against
+declared Git state.
+
+Any manual modification introduced directly to the cluster:
+
+- Detected automatically within seconds
+- Application marked OutOfSync
+- Cluster reconciled back to Git state without intervention
+
+Validated: manual kubectl scale command corrected
+in under 2 seconds across multiple test runs.
 
 ---
 
@@ -154,140 +134,113 @@ gitops-argocd-platform/
 
 Argo Rollouts manages controlled application promotion.
 
-Features include:
-
-* Canary deployments
-* Automated rollback
-* Traffic splitting
-* Metric-based promotion
-* SLO validation through Prometheus
+- Canary deployments with configurable traffic splitting
+- Metric-based promotion driven by Prometheus SLOs
+- Automated rollback on SLO breach
+- Blue-green deployment support
+- No manual promotion decisions required
 
 Unlike native Kubernetes Deployments, promotion decisions
-can be driven directly from application health metrics.
-
----
-
-## Drift Detection
-
-ArgoCD continuously compares live cluster state against
-Git state.
-
-Any manual modification introduced through kubectl is:
-
-* Detected automatically
-* Marked OutOfSync
-* Reconciled back to Git state
-
-This prevents unauthorized or accidental configuration drift.
+are driven directly from real application health metrics —
+not assumptions.
 
 ---
 
 ## Secrets Management
 
-HashiCorp Vault provides:
+HashiCorp Vault provides dynamic credential management:
 
-* Dynamic credentials
-* Secret rotation
-* Lease management
-* Audit logging
-* Centralized governance
+- Dynamic credential generation per request
+- Automatic secret rotation and lease management
+- Centralized audit logging
+- No static credentials stored anywhere
 
-Note: Kubernetes Secrets are Base64 encoded and should
-not be considered a complete secrets-management solution.
+Note: Kubernetes Secrets are Base64 encoded by default
+and should not be treated as a complete secrets solution
+without additional encryption configuration.
 
 ---
 
 ## Failure Scenarios
 
-| Scenario                    | Expected Response          |
-| --------------------------- | -------------------------- |
-| Manual cluster modification | ArgoCD auto-reconciliation |
-| Failed image deployment     | Rollout halted             |
-| Canary SLO breach           | Automatic rollback         |
-| Application sync failure    | Prometheus alert generated |
-| Secret expiration           | Vault re-issues credential |
+| Scenario | Platform Response |
+|----------|-----------------|
+| Manual cluster modification | ArgoCD detects and auto-reconciles |
+| Failed image deployment | Rollout halted — no traffic impact |
+| Canary SLO breach | Automatic rollback triggered |
+| Application sync failure | Prometheus alert generated |
+| Secret expiration | Vault re-issues credential automatically |
 
 ---
 
 ## Technical Decisions
 
-### Why ArgoCD?
+**Why ArgoCD over Flux**
+ArgoCD provides a richer application model with ApplicationSets
+for multi-environment management and immediate visibility into
+drift state across all applications simultaneously.
 
-ArgoCD provides continuous reconciliation, ApplicationSets,
-multi-environment management, and strong visibility into
-cluster drift status.
+**Why Argo Rollouts over native Deployments**
+Native Kubernetes Deployments have no concept of metric-driven
+promotion. Argo Rollouts adds SLO-gated traffic splitting,
+automated analysis, and abort behavior that native rollouts
+cannot provide.
 
-### Why Argo Rollouts?
+**Why GitOps over push-based CI/CD**
+Push-based deployments require CI systems to hold cluster
+credentials — an unnecessary security surface. Pull-based
+GitOps keeps deployment authority inside the cluster where
+it belongs.
 
-Native Deployments cannot perform metric-driven promotion.
-Argo Rollouts enables canary analysis and automated rollback.
-
-### Why GitOps?
-
-Git becomes the authoritative source of truth, improving
-auditability, repeatability, and deployment consistency.
-
-### Why Vault?
-
-Dynamic secrets eliminate long-lived credentials and reduce
-the operational risk associated with static secret storage.
+**Why Vault over Kubernetes Secrets**
+Kubernetes Secrets are Base64 encoded — not encrypted at rest
+by default. Vault provides dynamic credential generation,
+automatic rotation, and audit logging that Kubernetes Secrets
+cannot match.
 
 ---
 
-## Verification
+## Verification Commands
 
 ```bash
-# Check application status
+# Check all ArgoCD applications
 argocd app list
 
-# Verify sync status
-argocd app get frontend
+# Get detailed application status
+argocd app get production-api-service
 
-# Verify rollouts
+# Check rollout status
 kubectl get rollouts -A
 
-# Verify cluster workloads
+# Verify all workloads
 kubectl get pods -A
 ```
 
 ---
 
-## Results
-
-Successful deployment provides:
-
-* Continuous GitOps reconciliation
-* Automated drift remediation
-* Canary deployment capability
-* Prometheus-driven rollout validation
-* Dynamic secrets management through Vault
-* Multi-environment deployment support
-
----
-
 ## Lessons Learned
 
-* GitOps significantly reduces operational drift
-* Progressive delivery improves deployment safety
-* Secret management must be designed early
-* Monitoring should be treated as a platform dependency
-* ApplicationSets simplify multi-environment management
+- GitOps reconciliation operates on a fundamentally different
+  timescale than Kubernetes self-healing — drift corrected
+  in under 2 seconds compared to the 20–46 seconds observed
+  in node failure recovery scenarios
+- Progressive delivery requires observability to be useful —
+  metric-driven promotion only works if the metrics are meaningful
+- Secret management must be designed before the first deployment
+  not retrofitted after
+- ApplicationSets significantly reduce the operational overhead
+  of managing multiple environments
 
 ---
 
 ## Future Improvements
 
-* Multi-cluster GitOps management
-* Policy enforcement with Kyverno
-* Service mesh integration
-* Disaster recovery automation
-* High availability ArgoCD deployment
-* Automated compliance validation
-
----
-
-> Git is not a deployment trigger.
-> Git is the desired state of the platform.
+- Multi-cluster GitOps management
+- Policy enforcement with Kyverno
+- Service mesh integration with Istio
+- Disaster recovery automation
+- High availability ArgoCD deployment
+- Automated compliance validation
 
 ---
 
@@ -295,16 +248,14 @@ Successful deployment provides:
 
 Olamide Olalekan — Platform & DevSecOps Engineer
 
-LinkedIn: https://linkedin.com/in/olamide-olalekan-12138a265
-
-GitHub: https://github.com/velrite
-
-Website: https://velrite.github.io
+[Portfolio](https://velrite.github.io) |
+[LinkedIn](https://linkedin.com/in/olamide-olalekan-12138a265) |
+[GitHub](https://github.com/velrite)
 
 ---
 
 ## Related Projects
 
-* Auto-Healing Kubernetes Platform
-* Terraform Kubernetes Platform
-* Dockerize Everything
+- [Auto-Healing Kubernetes Platform](https://github.com/velrite/auto-healing-kubernetes-platform)
+- [Terraform Kubernetes Platform](https://github.com/velrite/Terraform-Kubernetes-Platform)
+- [Dockerize-Everything](https://github.com/velrite/Dockerize-Everything)
