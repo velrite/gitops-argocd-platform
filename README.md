@@ -21,65 +21,90 @@ GitOps inverts that model entirely.
 
 ---
 
+
 ## Architecture
 
-```
-GitHub Repository (Source of Truth)
-        │
-        │  ArgoCD polls every 3 minutes
-        │  or instantly via webhook
-        ▼
-┌─────────────────────────────────────────────┐
-│              ArgoCD (namespace: argocd)     │
-│                                             │
-│  Application Controller                     │
-│  — compares Git state vs cluster state      │
-│                                             │
-│  Repo Server                                │
-│  — pulls and renders manifests (Kustomize)  │
-│                                             │
-│  API Server                                 │
-│  — UI and CLI access                        │
-│                                             │
-│  ApplicationSet Controller                  │
-│  — generates Applications per environment  │
-└──────────────────┬──────────────────────────┘
-                   │
-        ┌──────────┴──────────┐
-        ▼                     ▼
-staging-api-service    production-api-service
-(namespace: staging)   (namespace: production)
-2 replicas             2 replicas
-                       canary via Argo Rollouts
-```
+```mermaid
+flowchart TD
+    DEV([👨‍💻 Developer]) -->|Push / PR| GIT
 
-### The Core Reconciliation Loop
+    subgraph GIT["🗂️ GitHub — Source of Truth"]
+        REPO[Git Repository]
+        GHA[GitHub Actions CI]
+        GHCR[Container Registry GHCR]
+        REPO --> GHA --> GHCR
+    end
 
-```
-Desired State (Git)
-        │
-        ▼
-   ArgoCD compares
-        │
-        ▼
-Actual State (Cluster)
-        │
-        ▼
-  If different →
-  ArgoCD corrects cluster automatically
-        │
-        ▼
-  Loop runs continuously
-```
+    GIT -->|webhook or 3min poll| ARGOCD
 
-This is the same reconciliation pattern as Kubernetes itself.
-Kubernetes reconciles pods to match Deployments.
-ArgoCD reconciles the cluster to match Git.
-Same loop — one layer higher.
+    subgraph ARGOCD["⚙️ ArgoCD — namespace: argocd"]
+        AC[Application Controller\nGit state vs cluster state]
+        RS[Repo Server\nKustomize rendering]
+        APIS[API Server\nUI and CLI]
+        ASC[ApplicationSet Controller\nmatrix generator]
+        AC --- RS
+        RS --- APIS
+        APIS --- ASC
+    end
+
+    ASC -->|auto sync| STAGING
+    ASC -->|manual gate| PROD
+
+    subgraph STAGING["🧪 Staging — namespace: staging"]
+        S1[api-service\n1 replica\ndirect deployment]
+    end
+
+    subgraph PROD["🚀 Production — namespace: production"]
+        P1[api-service\n2 replicas]
+        ROLLOUTS[Argo Rollouts\nCanary → Full]
+        P1 --> ROLLOUTS
+    end
+
+    GHCR -->|SHA-tagged image| ROLLOUTS
+
+    subgraph OBS["📊 Observability Stack"]
+        PROM[Prometheus\n36 alert rules]
+        GRAF[Grafana\nGolden Signals]
+        ALERT[Alertmanager\ndrift + sync alerts]
+        PROM --> GRAF
+        PROM --> ALERT
+    end
+
+    ROLLOUTS -->|SLO metrics| PROM
+    PROM -->|SLO breach| ROLLBACK([🔄 Automatic Rollback])
+
+    subgraph SEC["🔐 Security Layer"]
+        VAULT[HashiCorp Vault\ndynamic secrets\nnever stored in Git]
+        TF[Terraform\nprovisioned ArgoCD\nand Argo Rollouts]
+    end
+
+    ARGOCD --> VAULT
+    TF -->|IaC bootstrap| ARGOCD
+```
 
 ---
 
-## Component Breakdown
+## The Core Reconciliation Loop
+
+```mermaid
+flowchart LR
+    GIT[Desired State\nGit Repository]
+    CLUSTER[Actual State\nKubernetes Cluster]
+    ARGO{ArgoCD\ncompares}
+    CORRECT[Auto-Reconcile\ncluster corrected]
+
+    GIT --> ARGO
+    CLUSTER --> ARGO
+    ARGO -->|different| CORRECT
+    CORRECT -->|loop continues| ARGO
+```
+
+> Same reconciliation pattern as Kubernetes itself.
+> Kubernetes reconciles pods to match Deployments.
+> ArgoCD reconciles the cluster to match Git.
+> Same loop — one layer higher.
+
+---## Component Breakdown
 
 | Component | Role |
 |-----------|------|
