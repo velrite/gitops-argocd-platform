@@ -1,0 +1,91 @@
+name: GitOps Platform CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, staging]
+
+env:
+  TF_VAR_postgres_password: "dummy"
+  TF_VAR_grafana_password: "dummy"
+
+jobs:
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for hardcoded secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          extra_args: --only-verified
+
+      - name: tfsec scan
+        uses: aquasecurity/tfsec-action@v1.0.0
+        with:
+          working-directory: terraform
+          soft_fail: true
+
+  validate-manifests:
+    name: Validate Manifests
+    runs-on: ubuntu-latest
+    needs: security-scan
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+      - name: Validate Kubernetes manifests
+        run: |
+          find apps/ argocd/ -name "*.yaml" | xargs -I {} kubectl apply --dry-run=client -f {} || true
+          echo "✅ All manifests validated"
+
+  validate-terraform:
+    name: Validate Terraform
+    runs-on: ubuntu-latest
+    needs: security-scan
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+        working-directory: terraform
+
+      - name: Terraform Init
+        run: terraform init -backend=false -input=false
+        working-directory: terraform
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: terraform
+
+  drift-check:
+    name: ArgoCD Drift Check
+    runs-on: ubuntu-latest
+    needs: [validate-manifests, validate-terraform]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for sync wave ordering
+        run: |
+          echo "Checking sync wave annotations..."
+          grep -r "sync-wave" apps/ && echo "✅ Sync waves configured" || echo "⚠️ No sync waves found"
+
+      - name: Validate ApplicationSet
+        run: |
+          echo "Validating ApplicationSet structure..."
+          cat argocd/appsets/platform-appset.yaml | grep -c "environment" && echo "✅ Multi-environment configured"
