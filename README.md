@@ -1,3 +1,4 @@
+
 # GitOps Platform — ArgoCD on Kubernetes
 
 A production-oriented GitOps platform where Git is the single source
@@ -17,6 +18,78 @@ GitOps inverts that model entirely.
 > Git is not a deployment trigger.
 > Git is the desired state of the platform.
 > The cluster's only job is to continuously prove it.
+
+---
+
+## Architecture
+
+```
+GitHub Repository (Source of Truth)
+        │
+        │  ArgoCD polls every 3 minutes
+        │  or instantly via webhook
+        ▼
+┌─────────────────────────────────────────────┐
+│              ArgoCD (namespace: argocd)     │
+│                                             │
+│  Application Controller                     │
+│  — compares Git state vs cluster state      │
+│                                             │
+│  Repo Server                                │
+│  — pulls and renders manifests (Kustomize)  │
+│                                             │
+│  API Server                                 │
+│  — UI and CLI access                        │
+│                                             │
+│  ApplicationSet Controller                  │
+│  — generates Applications per environment  │
+└──────────────────┬──────────────────────────┘
+                   │
+        ┌──────────┴──────────┐
+        ▼                     ▼
+staging-api-service    production-api-service
+(namespace: staging)   (namespace: production)
+2 replicas             2 replicas
+                       canary via Argo Rollouts
+```
+
+### The Core Reconciliation Loop
+
+```
+Desired State (Git)
+        │
+        ▼
+   ArgoCD compares
+        │
+        ▼
+Actual State (Cluster)
+        │
+        ▼
+  If different →
+  ArgoCD corrects cluster automatically
+        │
+        ▼
+  Loop runs continuously
+```
+
+This is the same reconciliation pattern as Kubernetes itself.
+Kubernetes reconciles pods to match Deployments.
+ArgoCD reconciles the cluster to match Git.
+Same loop — one layer higher.
+
+---
+
+## Component Breakdown
+
+| Component | Role |
+|-----------|------|
+| Terraform | Provisions ArgoCD and Argo Rollouts onto the cluster — IaC layer |
+| ArgoCD | Watches Git, syncs cluster to match it, self-heals drift |
+| Kustomize Overlays | One base manifest patched per environment — staging 1 replica, production 2 |
+| AppProject | RBAC boundary — defines who can sync what and where apps are allowed to deploy |
+| ApplicationSet | Generates staging and production Applications from one template via matrix generator |
+| Argo Rollouts | Canary deployment engine — shifts traffic gradually instead of all at once |
+| Sync Waves | Controls deployment order — namespace and configmap before deployment |
 
 ---
 
@@ -62,6 +135,7 @@ Static credentials eliminated from all environments.
 | GitOps Engine | ArgoCD |
 | Progressive Delivery | Argo Rollouts |
 | Container Orchestration | Kubernetes |
+| Manifest Templating | Kustomize |
 | Infrastructure as Code | Terraform |
 | Monitoring | Prometheus + Grafana |
 | Alerting | Alertmanager |
@@ -76,12 +150,17 @@ Static credentials eliminated from all environments.
 ```
 gitops-argocd-platform/
 ├── apps/
+│   ├── base/
+│   │   └── api-service.yaml
 │   ├── staging/
+│   │   └── kustomization.yaml
 │   └── production/
+│       └── kustomization.yaml
 ├── argocd/
 │   ├── install/
 │   ├── applications/
-│   └── appsets/
+│   ├── appsets/
+│   └── projects/
 ├── rollouts/
 │   ├── canary-rollout.yaml
 │   └── bluegreen-rollout.yaml
@@ -95,10 +174,10 @@ gitops-argocd-platform/
 
 ## Environments
 
-| Environment | Sync Policy | Delivery Strategy |
-|-------------|-------------|------------------|
-| Staging | Automatic | Direct deployment |
-| Production | Manual gate | Canary → Full |
+| Environment | Sync Policy | Delivery Strategy | Replicas |
+|-------------|-------------|------------------|----------|
+| Staging | Automatic | Direct deployment | 1 |
+| Production | Manual gate | Canary → Full | 2 |
 
 ---
 
@@ -107,10 +186,11 @@ gitops-argocd-platform/
 1. Developer updates application manifest or image tag
 2. Pull Request opened for peer review
 3. Merge to main triggers ArgoCD sync detection
-4. Cluster synchronizes automatically to declared state
-5. Argo Rollouts begins canary deployment in production
-6. Prometheus validates SLO thresholds continuously
-7. Full promotion on success — automatic rollback on breach
+4. Kustomize renders environment-specific manifests
+5. ArgoCD syncs cluster to declared state
+6. Argo Rollouts begins canary deployment in production
+7. Prometheus validates SLO thresholds continuously
+8. Full promotion on success — automatic rollback on breach
 
 ---
 
@@ -138,7 +218,7 @@ Argo Rollouts manages controlled application promotion.
 - Metric-based promotion driven by Prometheus SLOs
 - Automated rollback on SLO breach
 - Blue-green deployment support
-- No manual promotion decisions required
+- Sync waves control deployment ordering
 
 Unlike native Kubernetes Deployments, promotion decisions
 are driven directly from real application health metrics —
@@ -165,7 +245,7 @@ without additional encryption configuration.
 
 | Scenario | Platform Response |
 |----------|-----------------|
-| Manual cluster modification | ArgoCD detects and auto-reconciles |
+| Manual cluster modification | ArgoCD detects and auto-reconciles in under 2 seconds |
 | Failed image deployment | Rollout halted — no traffic impact |
 | Canary SLO breach | Automatic rollback triggered |
 | Application sync failure | Prometheus alert generated |
@@ -176,9 +256,14 @@ without additional encryption configuration.
 ## Technical Decisions
 
 **Why ArgoCD over Flux**
-ArgoCD provides a richer application model with ApplicationSets
-for multi-environment management and immediate visibility into
+ArgoCD provides ApplicationSets for multi-environment management,
+AppProjects for RBAC boundaries, and immediate visibility into
 drift state across all applications simultaneously.
+
+**Why Kustomize over Helm**
+Kustomize overlays allow one base manifest to be patched
+differently per environment without templating complexity.
+Staging and production diverge only where they need to.
 
 **Why Argo Rollouts over native Deployments**
 Native Kubernetes Deployments have no concept of metric-driven
@@ -224,12 +309,15 @@ kubectl get pods -A
   timescale than Kubernetes self-healing — drift corrected
   in under 2 seconds compared to the 20–46 seconds observed
   in node failure recovery scenarios
+- Kustomize overlays enforce environment parity at the manifest
+  level — configuration drift between environments becomes
+  structurally impossible
 - Progressive delivery requires observability to be useful —
   metric-driven promotion only works if the metrics are meaningful
+- AppProjects are worth configuring from day one — retrofitting
+  RBAC boundaries after deployment is significantly harder
 - Secret management must be designed before the first deployment
   not retrofitted after
-- ApplicationSets significantly reduce the operational overhead
-  of managing multiple environments
 
 ---
 
@@ -259,3 +347,6 @@ Olamide Olalekan — Platform & DevSecOps Engineer
 - [Auto-Healing Kubernetes Platform](https://github.com/velrite/auto-healing-kubernetes-platform)
 - [Terraform Kubernetes Platform](https://github.com/velrite/Terraform-Kubernetes-Platform)
 - [Dockerize-Everything](https://github.com/velrite/Dockerize-Everything)
+````
+
+---
