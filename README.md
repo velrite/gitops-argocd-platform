@@ -1,172 +1,92 @@
+# GitOps ArgoCD Platform
 
-# GitOps Platform — ArgoCD on Kubernetes
+> Git is the only source of truth. The cluster is a reflection of it.
 
-A production-oriented GitOps platform where Git is the single source
-of truth and the cluster continuously proves it.
+**Author:** Olamide Olalekan — Platform & DevSecOps Engineer
+**GitHub:** [github.com/velrite](https://github.com/velrite)
+**LinkedIn:** [linkedin.com/in/olamide-olalekan-12138a265](https://linkedin.com/in/olamide-olalekan-12138a265)
+**Email:** velrite.tech@gmail.com
 
-This project addresses a fundamental operational problem: imperative
-kubectl workflows leave no immutable audit trail, allow silent
-configuration drift, and create fragile deployment processes that
-degrade under pressure.
-
-GitOps inverts that model entirely.
-
----
-
-## Core Engineering Principle
-
-> Git is not a deployment trigger.
-> Git is the desired state of the platform.
-> The cluster's only job is to continuously prove it.
+**Connects to:**
+- [Project 1 — Auto-Healing Kubernetes Platform](https://github.com/velrite/auto-healing-k8s--)
+- [Project 2 — Terraform Kubernetes Platform](https://github.com/velrite/Terraform-Kubernetes-Platform)
 
 ---
 
+## The Problem This Solves
 
-## Architecture
+In Projects 1 and 2, deployment still required human action:
+- `kubectl apply` to deploy applications
+- `helm install` to install tools
+- Manual verification after each step
 
-```mermaid
-flowchart TD
-    DEV([👨‍💻 Developer]) -->|Push / PR| GIT
+This project eliminates all of it.
 
-    subgraph GIT["🗂️ GitHub — Source of Truth"]
-        REPO[Git Repository]
-        GHA[GitHub Actions CI]
-        GHCR[Container Registry GHCR]
-        REPO --> GHA --> GHCR
-    end
+Push to Git. ArgoCD syncs the cluster.
+If someone changes the cluster manually, ArgoCD corrects it.
+The Git history is the audit trail. Rollback is `git revert`.
 
-    GIT -->|webhook or 3min poll| ARGOCD
-
-    subgraph ARGOCD["⚙️ ArgoCD — namespace: argocd"]
-        AC[Application Controller\nGit state vs cluster state]
-        RS[Repo Server\nKustomize rendering]
-        APIS[API Server\nUI and CLI]
-        ASC[ApplicationSet Controller\nmatrix generator]
-        AC --- RS
-        RS --- APIS
-        APIS --- ASC
-    end
-
-    ASC -->|auto sync| STAGING
-    ASC -->|manual gate| PROD
-
-    subgraph STAGING["🧪 Staging — namespace: staging"]
-        S1[api-service\n1 replica\ndirect deployment]
-    end
-
-    subgraph PROD["🚀 Production — namespace: production"]
-        P1[api-service\n2 replicas]
-        ROLLOUTS[Argo Rollouts\nCanary → Full]
-        P1 --> ROLLOUTS
-    end
-
-    GHCR -->|SHA-tagged image| ROLLOUTS
-
-    subgraph OBS["📊 Observability Stack"]
-        PROM[Prometheus\n36 alert rules]
-        GRAF[Grafana\nGolden Signals]
-        ALERT[Alertmanager\ndrift + sync alerts]
-        PROM --> GRAF
-        PROM --> ALERT
-    end
-
-    ROLLOUTS -->|SLO metrics| PROM
-    PROM -->|SLO breach| ROLLBACK([🔄 Automatic Rollback])
-
-    subgraph SEC["🔐 Security Layer"]
-        VAULT[HashiCorp Vault\ndynamic secrets\nnever stored in Git]
-        TF[Terraform\nprovisioned ArgoCD\nand Argo Rollouts]
-    end
-
-    ARGOCD --> VAULT
-    TF -->|IaC bootstrap| ARGOCD
-```
-
----
-
-## The Core Reconciliation Loop
-
-```mermaid
-flowchart LR
-    GIT[Desired State\nGit Repository]
-    CLUSTER[Actual State\nKubernetes Cluster]
-    ARGO{ArgoCD\ncompares}
-    CORRECT[Auto-Reconcile\ncluster corrected]
-
-    GIT --> ARGO
-    CLUSTER --> ARGO
-    ARGO -->|different| CORRECT
-    CORRECT -->|loop continues| ARGO
-```
-
-> Same reconciliation pattern as Kubernetes itself.
-> Kubernetes reconciles pods to match Deployments.
-> ArgoCD reconciles the cluster to match Git.
-> Same loop — one layer higher.
-
----## Component Breakdown
-
-| Component | Role |
-|-----------|------|
-| Terraform | Provisions ArgoCD and Argo Rollouts onto the cluster — IaC layer |
-| ArgoCD | Watches Git, syncs cluster to match it, self-heals drift |
-| Kustomize Overlays | One base manifest patched per environment — staging 1 replica, production 2 |
-| AppProject | RBAC boundary — defines who can sync what and where apps are allowed to deploy |
-| ApplicationSet | Generates staging and production Applications from one template via matrix generator |
-| Argo Rollouts | Canary deployment engine — shifts traffic gradually instead of all at once |
-| Sync Waves | Controls deployment order — namespace and configmap before deployment |
-
----
-
-## What This Platform Addresses
-
-**Configuration Drift**
-Any manual cluster modification is detected within seconds
-and automatically reconciled back to the declared Git state.
-The cluster cannot silently diverge from what was intended.
-
-**Deployment Auditability**
-Deployment history maps directly to git log.
-Every change is reviewed before it reaches the cluster.
-Rollback is git revert — no scripts, no manual intervention.
-
-**Deployment Safety**
-Progressive delivery via Argo Rollouts.
-Canary deployments promoted or rolled back automatically
-based on real-time Prometheus SLO thresholds.
-Bad deployments never reach full production traffic.
-
-**Secrets Management**
-HashiCorp Vault injects credentials dynamically at runtime.
-No secrets stored in Git under any circumstances.
-Static credentials eliminated from all environments.
+No kubectl in production. Ever.
 
 ---
 
 ## Proven Results
 
-- ArgoCD drift detection and auto-reconciliation confirmed
-- Manual kubectl scale command corrected in under 2 seconds
-- Both staging and production applications Synced and Healthy
-- CI/CD pipeline passing all stages automatically
-- Multi-environment GitOps workflow validated end to end
+### Drift Detection — Under 2 Seconds
+
+```bash
+kubectl scale deployment api-service -n production --replicas=5
+# Manually set 5 replicas — this is drift from Git (which says 2)
+
+kubectl get pods -n production
+# Still showing 2 pods — ArgoCD corrected before second command returned
+```
+
+ArgoCD detected the drift and corrected it faster than a second
+kubectl command could execute. The 5-replica state never persisted
+long enough to be captured in a screenshot.
+
+[SCREENSHOT: ArgoCD UI showing production-api-service Synced and Healthy]
+
+### Multi-Environment from One Repo
+
+```
+staging-api-service    — Synced — Healthy — 1 replica
+production-api-service — Synced — Healthy — 2 replicas
+```
+
+Both environments managed from a single ApplicationSet template.
+[SCREENSHOT: argocd app list showing both apps Synced and Healthy]
 
 ---
 
-## Tech Stack
+## Architecture
 
-| Layer | Technology |
-|-------|-----------|
-| GitOps Engine | ArgoCD |
-| Progressive Delivery | Argo Rollouts |
-| Container Orchestration | Kubernetes |
-| Manifest Templating | Kustomize |
-| Infrastructure as Code | Terraform |
-| Monitoring | Prometheus + Grafana |
-| Alerting | Alertmanager |
-| Secrets Management | HashiCorp Vault |
-| CI Pipeline | GitHub Actions |
-| Container Registry | GHCR |
+```
+GitHub Repository (single source of truth)
+         │
+         │ ArgoCD polls every 180 seconds
+         │ (or immediately via webhook)
+         ▼
+    ┌─────────────────────────────────────┐
+    │          ArgoCD (namespace: argocd) │
+    │                                     │
+    │  Application Controller             │
+    │  ├── compares Git vs cluster state  │
+    │  ├── detects drift                  │
+    │  └── triggers sync                  │
+    │                                     │
+    │  ApplicationSet Controller          │
+    │  └── generates Applications from   │
+    │      matrix generator template      │
+    └──────────────┬──────────────────────┘
+                   │
+         ┌─────────┴─────────┐
+         ▼                   ▼
+   staging namespace    production namespace
+   1 replica            2 replicas
+   auto-sync            auto-sync + selfHeal
+```
 
 ---
 
@@ -174,204 +94,159 @@ Static credentials eliminated from all environments.
 
 ```
 gitops-argocd-platform/
+├── terraform/                    — provisions ArgoCD via Helm
+│   ├── main.tf                   — ArgoCD + Argo Rollouts helm_release
+│   └── argocd-values.yaml        — RBAC, metrics, resource limits
 ├── apps/
 │   ├── base/
-│   │   └── api-service.yaml
+│   │   └── deployment.yaml       — base manifest (nginx demo app)
 │   ├── staging/
-│   │   └── kustomization.yaml
+│   │   ├── deployment.yaml       — copy of base
+│   │   └── kustomization.yaml    — patch: 1 replica, staging label
 │   └── production/
-│       └── kustomization.yaml
+│       ├── deployment.yaml       — copy of base
+│       ├── kustomization.yaml    — patch: 2 replicas, production label
+│       └── rollout.yaml          — Argo Rollouts canary definition
 ├── argocd/
-│   ├── install/
-│   ├── applications/
-│   ├── appsets/
-│   └── projects/
-├── rollouts/
-│   ├── canary-rollout.yaml
-│   └── bluegreen-rollout.yaml
-├── monitoring/
-│   └── alerts/
-└── terraform/
-    └── argocd-install/
+│   ├── projects/
+│   │   └── platform-project.yaml — RBAC: who can deploy where
+│   └── appsets/
+│       └── platform-appset.yaml  — ApplicationSet: staging + production
+├── security/
+│   ├── opa/                      — OPA Gatekeeper constraints
+│   └── kyverno/                  — Kyverno policies
+├── observability/
+│   └── sloth/                    — SLO definitions
+├── chaos/
+│   └── litmus/                   — Chaos experiments
+└── .github/workflows/
+    └── gitops.yml               — CI: security scan, validate, drift check
 ```
 
 ---
 
-## Environments
+## Key Concepts
 
-| Environment | Sync Policy | Delivery Strategy | Replicas |
-|-------------|-------------|------------------|----------|
-| Staging | Automatic | Direct deployment | 1 |
-| Production | Manual gate | Canary → Full | 2 |
+### Why Git over ArgoCD UI?
+Git provides audit trail, peer review via PRs, and rollback via `git revert`.
+The UI is for visibility only. Every change goes through Git.
+That is the definition of GitOps.
 
----
+### selfHeal
+`selfHeal: true` means ArgoCD watches the cluster continuously
+and reverts any manual change immediately.
+Tested result: drift corrected in under 2 seconds.
 
-## Deployment Workflow
+### ApplicationSet Matrix Generator
+One template generates N applications from combinations of environments and apps.
+Add a new environment by adding one line to the generator list.
+No duplication. No manual Application creation.
 
-1. Developer updates application manifest or image tag
-2. Pull Request opened for peer review
-3. Merge to main triggers ArgoCD sync detection
-4. Kustomize renders environment-specific manifests
-5. ArgoCD syncs cluster to declared state
-6. Argo Rollouts begins canary deployment in production
-7. Prometheus validates SLO thresholds continuously
-8. Full promotion on success — automatic rollback on breach
+### Sync Waves
+Resources deploy in order via annotations:
+- Wave 0: Namespace
+- Wave 1: ConfigMap, Services
+- Wave 2: Deployments
+- Wave 3: Rollouts
 
----
-
-## Drift Detection
-
-ArgoCD continuously compares live cluster state against
-declared Git state.
-
-Any manual modification introduced directly to the cluster:
-
-- Detected automatically within seconds
-- Application marked OutOfSync
-- Cluster reconciled back to Git state without intervention
-
-Validated: manual kubectl scale command corrected
-in under 2 seconds across multiple test runs.
+Prevents deployment starting before its dependencies exist.
 
 ---
 
-## Progressive Delivery
+## Quick Start
 
-Argo Rollouts manages controlled application promotion.
+### Prerequisites
+- Minikube running with prod-sim profile
+- kubectl, helm, ArgoCD CLI installed
+- This repository pushed to GitHub
 
-- Canary deployments with configurable traffic splitting
-- Metric-based promotion driven by Prometheus SLOs
-- Automated rollback on SLO breach
-- Blue-green deployment support
-- Sync waves control deployment ordering
-
-Unlike native Kubernetes Deployments, promotion decisions
-are driven directly from real application health metrics —
-not assumptions.
-
----
-
-## Secrets Management
-
-HashiCorp Vault provides dynamic credential management:
-
-- Dynamic credential generation per request
-- Automatic secret rotation and lease management
-- Centralized audit logging
-- No static credentials stored anywhere
-
-Note: Kubernetes Secrets are Base64 encoded by default
-and should not be treated as a complete secrets solution
-without additional encryption configuration.
-
----
-
-## Failure Scenarios
-
-| Scenario | Platform Response |
-|----------|-----------------|
-| Manual cluster modification | ArgoCD detects and auto-reconciles in under 2 seconds |
-| Failed image deployment | Rollout halted — no traffic impact |
-| Canary SLO breach | Automatic rollback triggered |
-| Application sync failure | Prometheus alert generated |
-| Secret expiration | Vault re-issues credential automatically |
-
----
-
-## Technical Decisions
-
-**Why ArgoCD over Flux**
-ArgoCD provides ApplicationSets for multi-environment management,
-AppProjects for RBAC boundaries, and immediate visibility into
-drift state across all applications simultaneously.
-
-**Why Kustomize over Helm**
-Kustomize overlays allow one base manifest to be patched
-differently per environment without templating complexity.
-Staging and production diverge only where they need to.
-
-**Why Argo Rollouts over native Deployments**
-Native Kubernetes Deployments have no concept of metric-driven
-promotion. Argo Rollouts adds SLO-gated traffic splitting,
-automated analysis, and abort behavior that native rollouts
-cannot provide.
-
-**Why GitOps over push-based CI/CD**
-Push-based deployments require CI systems to hold cluster
-credentials — an unnecessary security surface. Pull-based
-GitOps keeps deployment authority inside the cluster where
-it belongs.
-
-**Why Vault over Kubernetes Secrets**
-Kubernetes Secrets are Base64 encoded — not encrypted at rest
-by default. Vault provides dynamic credential generation,
-automatic rotation, and audit logging that Kubernetes Secrets
-cannot match.
-
----
-
-## Verification Commands
-
+### Deploy ArgoCD via Terraform
 ```bash
-# Check all ArgoCD applications
+cd terraform/
+terraform init
+terraform apply -auto-approve
+```
+
+### Connect ArgoCD to this repo
+```bash
+kubectl port-forward svc/argocd-server -n argocd 8080:80 &
+ARGOCD_PASS=$(kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath="{.data.password}" | base64 -d)
+argocd login localhost:8080 --username admin \
+  --password $ARGOCD_PASS --insecure
+```
+
+### Apply GitOps resources
+```bash
+kubectl apply -f argocd/projects/platform-project.yaml
+kubectl apply -f argocd/appsets/platform-appset.yaml
 argocd app list
+```
 
-# Get detailed application status
-argocd app get production-api-service
-
-# Check rollout status
-kubectl get rollouts -A
-
-# Verify all workloads
-kubectl get pods -A
+### Watch auto-sync
+```bash
+# ArgoCD will detect the repo and sync within 3 minutes
+# Or trigger immediately:
+argocd app sync staging-api-service --insecure
+argocd app sync production-api-service --insecure
+kubectl get pods -n staging
+kubectl get pods -n production
 ```
 
 ---
 
-## Lessons Learned
+## CI/CD Pipeline
 
-- GitOps reconciliation operates on a fundamentally different
-  timescale than Kubernetes self-healing — drift corrected
-  in under 2 seconds compared to the 20–46 seconds observed
-  in node failure recovery scenarios
-- Kustomize overlays enforce environment parity at the manifest
-  level — configuration drift between environments becomes
-  structurally impossible
-- Progressive delivery requires observability to be useful —
-  metric-driven promotion only works if the metrics are meaningful
-- AppProjects are worth configuring from day one — retrofitting
-  RBAC boundaries after deployment is significantly harder
-- Secret management must be designed before the first deployment
-  not retrofitted after
+```
+push to main
+  └── Security Scan
+  │     ├── TruffleHog  — secret scanning
+  │     └── tfsec       — Terraform security scan
+  └── Validate Manifests
+  │     └── kubectl dry-run on all YAML files
+  └── Validate Terraform
+  │     ├── terraform fmt -check
+  │     ├── terraform init -backend=false
+  │     └── terraform validate
+  └── Drift Check
+        ├── verify sync-wave annotations present
+        ├── verify security contexts present
+        ├── verify resource limits present
+        └── verify SLO definitions exist
+```
+
+[SCREENSHOT: GitHub Actions showing all 4 stages green]
 
 ---
 
-## Future Improvements
+## RBAC
 
-- Multi-cluster GitOps management
-- Policy enforcement with Kyverno
-- Service mesh integration with Istio
-- Disaster recovery automation
-- High availability ArgoCD deployment
-- Automated compliance validation
+Two roles defined in AppProject:
+
+| Role | Can Do | Cannot Do |
+|------|--------|-----------|
+| platform-admin | Sync any app, manage clusters and repos | — |
+| developer | View all apps, sync staging only | Touch production directly |
+
+Developers push to Git. ArgoCD handles production.
+
+---
+
+## Documentation
+
+| Document | What It Covers |
+|----------|---------------|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full GitOps flow, component design |
+| [GITOPS_MODEL.md](docs/GITOPS_MODEL.md) | How sync works, selfHeal, rollback model |
+| [SECURITY.md](docs/SECURITY.md) | RBAC, source repo restrictions, secrets |
+| [ADR.md](docs/ADR.md) | Kustomize vs Helm, automated vs manual sync |
+| [INCIDENTS.md](docs/INCIDENTS.md) | ComparisonError, drift correction timing |
+| [GAPS.md](docs/GAPS.md) | Image updater, Rollouts trigger, multi-cluster |
 
 ---
 
 ## Author
 
 Olamide Olalekan — Platform & DevSecOps Engineer
-
-[Portfolio](https://velrite.github.io) |
-[LinkedIn](https://linkedin.com/in/olamide-olalekan-12138a265) |
-[GitHub](https://github.com/velrite)
-
----
-
-## Related Projects
-
-- [Auto-Healing Kubernetes Platform](https://github.com/velrite/auto-healing-kubernetes-platform)
-- [Terraform Kubernetes Platform](https://github.com/velrite/Terraform-Kubernetes-Platform)
-- [Dockerize-Everything](https://github.com/velrite/Dockerize-Everything)
-````
-
----
+GitHub: [github.com/velrite](https://github.com/velrite)
+LinkedIn: [linkedin.com/in/olamide-olalekan-12138a265](https://linkedin.com/in/olamide-olalekan-12138a265)
