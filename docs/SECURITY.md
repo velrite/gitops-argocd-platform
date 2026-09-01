@@ -2,86 +2,56 @@
 
 ## AppProject Restrictions
 
-The platform AppProject enforces three boundaries:
+Source repository: ArgoCD can only pull from this repo.
+Cannot be instructed to deploy from any other source.
 
-**Source repository restriction:**
-ArgoCD can only pull manifests from:
-```
-https://github.com/velrite/gitops-argocd-platform
-```
-Cannot be instructed to deploy from any other repository.
-
-**Destination restriction:**
-Applications can only deploy to:
-- staging namespace on local cluster
-- production namespace on local cluster
-
+Destinations: only staging and production namespaces on local cluster.
 Cannot deploy to arbitrary namespaces or clusters.
 
-**RBAC restriction:**
-- platform-admin: full access to all applications
-- developer: read all, sync staging only
-
----
-
-## No Credentials in Git
-
-No passwords, tokens, API keys, or secrets stored in any manifest file.
-Kubernetes secrets referenced by name and created separately outside Git.
-
-Vault integration planned but not implemented in this project.
-See [GAPS.md](GAPS.md#external-secrets-not-configured).
-
----
-
-## Security Context on All Containers
-
-All application manifests include security context:
-```yaml
-securityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
-  fsGroup: 2000
-
-containers:
-  - securityContext:
-      allowPrivilegeEscalation: false
-      readOnlyRootFilesystem: true
-      capabilities:
-        drop: ["ALL"]
-```
-
-Kyverno policy enforces these on all production pods:
-```yaml
-kind: ClusterPolicy
-metadata:
-  name: disallow-privileged
-spec:
-  validationFailureAction: enforce
-  rules:
-    - name: check-privileged
-      validate:
-        pattern:
-          spec:
-            containers:
-              - =(securityContext):
-                  =(privileged): false
-```
-
----
+RBAC:
+- platform-admin: sync any app, manage clusters and repos
+- developer: view all, sync staging only
 
 ## OPA Gatekeeper — No Latest Tag
 
-Production deployments with `:latest` image tag are blocked
-at admission by OPA Gatekeeper constraint:
+OPA Gatekeeper installed.
+Constraint applied blocking :latest image tag in production:
 
 ```rego
 violation[{"msg": msg}] {
   container := input.review.object.spec.containers[_]
   endswith(container.image, ":latest")
-  msg := sprintf("Container %v uses latest tag — not allowed", [container.name])
+  msg := sprintf("Container %v uses latest tag", [container.name])
 }
 ```
 
-All images must use explicit version tags (e.g. `nginx:1.25-alpine`).
+All images must use explicit version tags.
 
+## Kyverno Policies
+
+Kyverno installed.
+Two policies applied:
+
+require-resource-limits: enforces CPU and memory limits on all
+production pods. Pod rejected at admission if limits missing.
+
+disallow-privileged: blocks privileged containers in production.
+
+## Security Context on All Manifests
+
+All app manifests include:
+```yaml
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+containers:
+  - securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+```
+
+## No Credentials in Git
+
+No passwords or tokens in any manifest file.
+Kubernetes secrets created separately and not committed.
