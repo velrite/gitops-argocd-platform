@@ -89,7 +89,9 @@ Cluster state: 2 replicas
 Time elapsed:  under 2 seconds
 ```
 
-This was tested live. The correction happened faster than running a second `kubectl get pods` command. The 5-replica state never persisted long enough to screenshot — which is the point.
+This was tested live. The correction happened faster than running a second `kubectl get pods` command.
+
+![Drift detection corrected automatically](docs/evidence/05-drift-detection.png) The 5-replica state never persisted long enough to screenshot — which is the point.
 
 [SCREENSHOT: docs/evidence/05-drift-detection.png]
 
@@ -127,6 +129,8 @@ Adding a new environment requires one line in the list.
 
 ### AppProject RBAC
 - platform-admin: sync any app, manage clusters and repos
+
+![AppProject RBAC configuration](docs/evidence/06-appproject-rbac.png)
 - developer: view all apps, sync staging only, cannot touch production
 
 ### Sync waves — deploy order enforced
