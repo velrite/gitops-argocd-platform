@@ -4,7 +4,7 @@ Git is the only deployment interface. The cluster is a reflection of the reposit
 
 **Status:** Argo CD (Helm chart 7.3.11) and Argo Rollouts are installed by Terraform on a local 3-node Minikube cluster (Kubernetes v1.31.0, profile `prod-sim`). Two environments, `staging` and `production`, are generated from one ApplicationSet and were Synced and Healthy when checked. A manual `kubectl scale` in production was reverted by self-heal before the next command returned. This is a local cluster, not a cloud deployment. Canary execution, Sloth SLO processing and Litmus experiment completion are defined but not verified at runtime. Every claim below carries a status, and the [claim table](#claim-status) shows how to re-check each one.
 
-**Author:** Olamide Olalekan, Platform & DevSecOps Engineer | [GitHub](https://github.com/velrite) | [LinkedIn](https://linkedin.com/in/olamide-olalekan-12138a265) | velrite.tech@gmail.com
+
 
 ---
 
